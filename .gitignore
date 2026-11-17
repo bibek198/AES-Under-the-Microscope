@@ -1,0 +1,30 @@
+# Planning documents (kept local, not part of the submission)
+PROJECT_SPEC.md
+PLAN*.md
+NOTES*.md
+docs/planning/
+
+# Build output
+build/
+build-*/
+cmake-build-*/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Raw timing samples (large; summaries and figures are committed)
+results/**/samples_*.csv
+
+# Demo backup recording
+demo/backup.mov
+
+# macOS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Working notes
+report/REFERENCES_CHECK.md
+results/*.log
