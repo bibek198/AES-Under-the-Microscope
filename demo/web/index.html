@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AES Under the Microscope</title>
+<link rel="stylesheet" href="style.css">
+<script src="vendor/chart.umd.min.js"></script>
+</head>
+<body>
+<div id="stage" class="stage">
+
+  <header class="toolbar glass">
+    <div class="app-name"><span class="dot"></span>AES Under the Microscope</div>
+    <nav class="segmented" id="tabs">
+      <span class="thumb"></span>
+      <button data-panel="explorer">Encrypt</button>
+      <button data-panel="speed">Speed</button>
+      <button data-panel="race">Leakage</button>
+      <button data-panel="heist">Attack</button>
+      <button data-panel="heatmap">Profile</button>
+      <button data-panel="compiler">Assembly</button>
+      <button data-panel="scorecard">Verdict</button>
+    </nav>
+    <div class="toolbar-end">
+      <div id="mode" class="pill"><span class="led"></span><span id="modeText">Replay</span></div>
+      <button id="themeBtn" class="round-btn" title="Light / dark (T)" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- 1 · Encrypt -->
+  <section class="panel" id="panel-explorer">
+    <div class="panel-head"><h1>Inside AES-128</h1><p>Your input, encrypted by our C++ implementation: all 10 rounds, step by step.</p></div>
+    <div class="panel-body">
+      <div class="col">
+        <div class="card glass">
+          <div class="card-head"><span class="card-title">Input</span></div>
+          <div class="field"><label for="ptText">Plaintext (16 characters)</label><input id="ptText" maxlength="16" value="Attack at dawn!!" spellcheck="false" autocomplete="off"></div>
+          <div class="field"><label for="keyHex">Key (hex)</label><input id="keyHex" class="mono" maxlength="32" value="000102030405060708090a0b0c0d0e0f" spellcheck="false"></div>
+          <div class="btn-row"><button id="encryptBtn" class="btn primary">Encrypt</button><button id="flipBtn" class="btn">Flip one bit</button></div>
+          <dl class="kv"><dt>Plaintext</dt><dd id="ptHex">–</dd><dt>Ciphertext</dt><dd id="ctHex">–</dd></dl>
+          <div class="status-line" id="selftest">Checking known-answer tests…</div>
+        </div>
+        <div class="card glass fill">
+          <div class="card-head"><span class="card-title">Avalanche</span><span class="stat-num" id="avPct" style="font-size:32px">–</span></div>
+          <div id="avGrid" class="av-grid"></div>
+          <p class="caption push-end">Ciphertext bits that change when one plaintext bit flips.</p>
+        </div>
+      </div>
+
+      <div class="card glass matrix-card">
+        <div class="step-title"><span class="round" id="stepRound">Round 0</span><span class="name" id="stepName">Input</span></div>
+        <div id="matrix" class="matrix"></div>
+        <p class="step-desc" id="stepDesc"></p>
+        <div class="scrubber"><button id="playBtn" class="btn small">Pause</button><div id="track" class="track"></div></div>
+      </div>
+
+      <div class="card glass">
+        <div class="card-head"><span class="card-title">Round keys</span></div>
+        <div id="rkList" class="rk-list"></div>
+        <p class="caption">Expanded from the key with RotWord, SubWord and a round constant. The highlighted key is the one being added.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · Speed -->
+  <section class="panel" id="panel-speed">
+    <div class="panel-head"><h1>The cost of safety</h1><p>Five implementations, identical ciphertext, very different speed.</p></div>
+    <div class="panel-body">
+      <div class="card glass stats">
+        <div class="stat"><div class="stat-num" id="statFast">–</div><div class="stat-label" id="statFastL">Fastest</div></div>
+        <div class="stat"><div class="stat-num" id="statSlow">–</div><div class="stat-label" id="statSlowL">Slowest</div></div>
+        <div class="stat"><div class="stat-num" id="statRatio">–</div><div class="stat-label">Hardware AES vs constant-time software</div></div>
+      </div>
+      <div class="card glass">
+        <div class="card-head"><span class="card-title" id="speedSource">Latency per 16-byte block</span><button id="benchBtn" class="btn small">Measure now</button></div>
+        <div id="speedRows" class="speed-rows"></div>
+        <div class="axis"><span></span><div class="scale" id="speedScale"></div><span></span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · Leakage -->
+  <section class="panel" id="panel-race">
+    <div class="panel-head"><h1>Does timing give it away?</h1><p>Fixed versus random inputs. Above |t| = 4.5, the timing reveals which input was used.</p></div>
+    <div class="panel-body">
+      <div class="card glass"><div class="chart-box"><canvas id="raceChart"></canvas></div></div>
+      <div class="col">
+        <div class="card glass">
+          <div class="seg-ctl" id="condSeg"><span class="thumb"></span><button data-cond="hot" class="on">Hot cache</button><button data-cond="evicted">Cache flushed</button></div>
+          <div class="btn-row"><button id="raceLive" class="btn primary">Run live</button><button id="raceReplay" class="btn">Replay</button></div>
+          <div><div class="stat-num" id="raceN">0</div><div class="stat-label">samples per implementation</div></div>
+        </div>
+        <div class="card glass fill">
+          <div class="card-head"><span class="card-title">Verdicts</span></div>
+          <div id="badges" class="list"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · Attack -->
+  <section class="panel" id="panel-heist">
+    <div class="panel-head"><h1>A toy attack</h1><p>The attacker sees only timings. The leak exists only because we injected it.</p></div>
+    <div class="panel-body">
+      <div class="col">
+        <div class="card glass">
+          <div class="field"><label for="secretByte">Secret key byte (hidden)</label><input id="secretByte" type="password" maxlength="2" placeholder="••" class="secret" autocomplete="off"></div>
+          <div class="seg-ctl" id="targetSeg"><span class="thumb"></span><button data-target="leaky" class="on">Injected leak</button><button data-target="ct">Constant-time</button></div>
+          <button id="heistBtn" class="btn primary">Run attack</button>
+        </div>
+        <div class="card glass">
+          <div><div class="stat-num" id="heistN">0</div><div class="stat-label">timings observed</div></div>
+          <div id="reveal" class="reveal">Waiting for a secret</div>
+        </div>
+        <div class="card glass fill">
+          <div class="card-head"><span class="card-title">Rank of the true byte</span></div>
+          <div class="chart-box"><canvas id="rankChart"></canvas></div>
+        </div>
+      </div>
+      <div class="card glass">
+        <div class="card-head"><span class="card-title">Score of each of the 256 key guesses</span></div>
+        <div class="chart-box"><canvas id="guessChart"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · Profile -->
+  <section class="panel" id="panel-heatmap">
+    <div class="panel-head"><h1>Where does the time go?</h1><p>Mean encryption time for each value of plaintext byte 0, with the cache flushed every time.</p></div>
+    <div class="panel-body">
+      <div class="card glass"><div class="card-head"><span class="card-title" id="hmTitleA">T-table</span></div><div class="hm-wrap"><div id="hmA" class="hm-grid"></div></div></div>
+      <div class="card glass"><div class="card-head"><span class="card-title" id="hmTitleB">Constant-time</span></div><div class="hm-wrap"><div id="hmB" class="hm-grid"></div></div></div>
+      <div class="card glass">
+        <div class="card-head"><span class="card-title">Reading the map</span></div>
+        <div><div class="legend-bar"></div><div class="legend-labels"><span>faster</span><span>median</span><span>slower</span></div></div>
+        <p class="caption">Rows are the high nibble of the byte, columns the low nibble. Structure would show <em>which</em> values are slow; noise looks like confetti.</p>
+        <p class="caption">T-table is flagged by the leakage test, yet its map shows no clear structure at 2 million samples. Detecting <em>that</em> timing differs is far easier than locating <em>where</em>.</p>
+        <dl class="facts push-end"><dt>Cells</dt><dd>256</dd><dt>Samples per cell</dt><dd id="hmPerCell">–</dd><dt>Colour scale</dt><dd>±98th pct</dd><dt>Centre</dt><dd>median cell</dd></dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · Assembly -->
+  <section class="panel" id="panel-compiler">
+    <div class="panel-head"><h1>Source is not what runs</h1><p>The same injected branch, compiled twice, next to its branch-free twin.</p></div>
+    <div class="panel-body">
+      <div class="card glass">
+        <div class="card-head"><span class="card-title">C++ source</span></div>
+        <pre id="srcCode" class="code src"></pre>
+        <div class="code-sep"></div>
+        <div class="card-head"><span class="card-title">Branch-free twin</span></div>
+        <pre id="twinCode" class="code src"></pre>
+      </div>
+      <div class="card glass">
+        <div class="card-head"><span class="card-title">-O0 assembly</span><span id="o0Badge" class="tag mini"></span></div>
+        <pre id="o0Code" class="code"></pre>
+      </div>
+      <div class="card glass">
+        <div class="card-head"><span class="card-title">-O2 assembly</span><span id="o2Badge" class="tag mini"></span></div>
+        <pre id="o2Code" class="code"></pre>
+        <div class="code-sep"></div>
+        <div class="card-head"><span class="card-title">Twin at -O2</span><span id="twinBadge" class="tag mini"></span></div>
+        <pre id="twinAsm" class="code"></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · Verdict -->
+  <section class="panel" id="panel-scorecard">
+    <div class="panel-head"><h1>Verdict</h1><p>Hypotheses written down before collecting data, judged by the recorded run.</p></div>
+    <div class="panel-body">
+      <div id="scores" class="card glass scores"></div>
+      <div class="glass footnote">
+        <span>Limits: 24 MHz timer · no core pinning on macOS · detection ≠ exploitability · non-detection ≠ proof of constant time</span>
+        <span id="runInfo" class="mono"></span>
+      </div>
+    </div>
+  </section>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
