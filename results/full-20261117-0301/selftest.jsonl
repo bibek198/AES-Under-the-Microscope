@@ -1,0 +1,15 @@
+{"label":"ref  FIPS-197 C.1","expected":"69c4e0d86a7b0430d8cdb78070b4c55a","got":"69c4e0d86a7b0430d8cdb78070b4c55a","ok":true}
+{"label":"ref  SP 800-38A F.1.1","expected":"3ad77bb40d7a3660a89ecaf32466ef97","got":"3ad77bb40d7a3660a89ecaf32466ef97","ok":true}
+{"label":"ttable  FIPS-197 C.1","expected":"69c4e0d86a7b0430d8cdb78070b4c55a","got":"69c4e0d86a7b0430d8cdb78070b4c55a","ok":true}
+{"label":"ttable  SP 800-38A F.1.1","expected":"3ad77bb40d7a3660a89ecaf32466ef97","got":"3ad77bb40d7a3660a89ecaf32466ef97","ok":true}
+{"label":"ct  FIPS-197 C.1","expected":"69c4e0d86a7b0430d8cdb78070b4c55a","got":"69c4e0d86a7b0430d8cdb78070b4c55a","ok":true}
+{"label":"ct  SP 800-38A F.1.1","expected":"3ad77bb40d7a3660a89ecaf32466ef97","got":"3ad77bb40d7a3660a89ecaf32466ef97","ok":true}
+{"label":"armv8  FIPS-197 C.1","expected":"69c4e0d86a7b0430d8cdb78070b4c55a","got":"69c4e0d86a7b0430d8cdb78070b4c55a","ok":true}
+{"label":"armv8  SP 800-38A F.1.1","expected":"3ad77bb40d7a3660a89ecaf32466ef97","got":"3ad77bb40d7a3660a89ecaf32466ef97","ok":true}
+{"label":"openssl  FIPS-197 C.1","expected":"69c4e0d86a7b0430d8cdb78070b4c55a","got":"69c4e0d86a7b0430d8cdb78070b4c55a","ok":true}
+{"label":"openssl  SP 800-38A F.1.1","expected":"3ad77bb40d7a3660a89ecaf32466ef97","got":"3ad77bb40d7a3660a89ecaf32466ef97","ok":true}
+{"label":"pos_leaky  FIPS-197 C.1","expected":"69c4e0d86a7b0430d8cdb78070b4c55a","got":"69c4e0d86a7b0430d8cdb78070b4c55a","ok":true}
+{"label":"pos_leaky  SP 800-38A F.1.1","expected":"3ad77bb40d7a3660a89ecaf32466ef97","got":"3ad77bb40d7a3660a89ecaf32466ef97","ok":true}
+{"label":"pos_twin  FIPS-197 C.1","expected":"69c4e0d86a7b0430d8cdb78070b4c55a","got":"69c4e0d86a7b0430d8cdb78070b4c55a","ok":true}
+{"label":"pos_twin  SP 800-38A F.1.1","expected":"3ad77bb40d7a3660a89ecaf32466ef97","got":"3ad77bb40d7a3660a89ecaf32466ef97","ok":true}
+{"label":"all implementations agree on 2,000 random (key, plaintext) pairs","expected":"0 mismatches","got":"0 mismatches","ok":true}
