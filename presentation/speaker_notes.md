@@ -1,82 +1,90 @@
-# Speaker notes
+# Speaker notes (Beamer deck, `slides.pdf`, 23 slides)
 
-Target: about 13 minutes in total. Slides 1–6 take about 5 minutes, the live
-demo about 5 minutes, and slides 8–11 about 3 minutes.
+Target: about 15 minutes. Slides 1–11 take about 6 minutes, the live demo
+about 5 minutes, and slides 13–23 about 4 minutes. The older Marp deck is
+kept as `slides-marp.*`.
 
 ---
 
-### 1. Title (20 s)
+### 1. Title (15 s)
+"ChronoLeak, in two parts: a finished experimental study of AES timing, and the research plan it led to."
 
-"AES has survived 25 years of cryptanalysis. But attackers rarely break the
-maths; they break the implementation. Today: five implementations that
-produce exactly the same ciphertext. Do they take the same time?"
+### 2. Same cipher, same output, different timing? (45 s)
+- Attackers break implementations, not AES. Kocher 1996; Bernstein, Osvik/Shamir/Tromer for AES caches.
+- The code that runs is what the compiler produced, on a CPU with its own predictors.
+- Read the question box.
 
-### 2. AES-128 in one picture (40 s)
+### 3. Two parts (30 s)
+- Part I is done: five implementations, harness, dashboard. Part II is a plan, with no results claimed.
 
-- State is 4×4 bytes, column-major.
-- 10 rounds. Round 10 drops MixColumns because it is linear and could just be
-  peeled off; it adds no security there.
-- "Everything we measure later is validated against the official vectors.
-  A side-channel study on broken crypto would be worthless."
+### 4. AES-128 in one picture (50 s)
+- State, 11 round keys, 10 rounds, no MixColumns in the last one because it is linear.
+- GF(2⁸): "Hold on to a²⁵⁴. Our constant-time version computes the S-box with it instead of a lookup."
 
-### 3. GF(2⁸) (60 s)
+### 5. Timing side channels and the test (50 s)
+- A branch costs time only when taken; a table address depends on the secret and the cache remembers addresses.
+- Fixed vs random, Welch t, 4.5. "It tells us *whether* timing depends on data, not how, and not exploitability."
 
-- Irreducible polynomial means every non-zero byte has an inverse.
-- The S-box is the only non-linear step: inverse, then affine map.
-- "Hold on to a²⁵⁴. Our constant-time version computes the S-box with that
-  formula instead of looking it up, and that's the defence."
-- MixColumns: an MDS matrix, so one byte change spreads to a whole column.
+### 6. Literature review (60 s)
+- Walk the table top to bottom: classic attacks → the test → constant-time AES → Apple predictors → compiler work in C → tools → Rust.
+- The highlighted rows (Breaking Bad, Fun with Flags) are why Part II exists: compilers break constant-time C, but nobody has measured Rust's own mechanisms.
 
-### 4. Timing side channels (50 s)
+### 7. Part I divider (5 s)
 
-- A branch costs time only when it is taken. A table lookup's address
-  depends on the secret, and the cache remembers addresses.
-- "Recent Apple-specific research shows the CPU's own predictors can leak
-  even when the source code looks safe. That comes back later."
+### 8. Five implementations (40 s)
+- Leaky to hardware. Safety in software costs 2.5 µs versus 7 ns.
+- "The positive control is ours, injected on purpose. It is not a flaw in AES."
 
-### 5. Five implementations (40 s)
+### 9. What we built (40 s)
+- One binary, 10 commands; refuses to measure until the self-test passes.
+- Python recomputes every statistic independently. "The dashboard you'll see is driven live by that binary."
 
-- From the most leaky to hardware.
-- Note the cost of safety in software: 2.5 µs versus 7 ns.
-- All agree on 100,000 random inputs.
+### 10. The dashboard (15 s)
+- Point at the four views you're about to demo.
 
-### 6. Methodology (60 s)
+### 11. Methodology (45 s)
+- 10⁶ samples, hot and evicted. Hypotheses written before collecting data.
+- "Two controls make this science rather than a demo."
 
-- Coin flip per sample; fixed vs random; Welch t; threshold 4.5.
-- "Two controls make this science rather than a demo. The A/A control shows
-  we don't raise false alarms. The injected branch shows we can detect a
-  real leak. The injected branch is ours. It is not a flaw in AES."
-- Hypotheses were written down before collecting data.
+### 12. Live demo (5 min): follow `demo/CHECKLIST.md`
 
-### 7. Live demo (5 min): see `demo/CHECKLIST.md` for the script
+### 13. Results: leakage (60 s)
+- F2: the positive control rises in a straight line, which is what a real leak looks like. The controls stay flat.
+- "T-table is quiet in a hot loop, because 4 KB fits in a 128 KB cache. Flush the cache and it leaks: 3 ns out of 81."
 
-### 8. Results (60 s)
+### 14. Performance and compiler (30 s)
+- Hardware AES is 353× faster than our safe software and quiet. The injected branch is detected at -O0 and -O2.
 
-- Point at F2: the positive control rises in a straight line, which is what
-  a real leak looks like. The controls stay flat.
-- "T-table is quiet in a hot loop, because 4 KB fits easily in a 128 KB cache.
-  Flush the cache and it leaks: 3 nanoseconds out of 81."
-- OpenSSL is quiet by default. Its fallback is flagged, with an asterisk
-  explained on the next slides.
+### 15. Under the hood (40 s)
+- "The branch survives as `tbnz`; the constant-time S-box has zero branches and zero table lookups."
+- OpenSSL caught with a debugger: hardware by default, portable C when detection is off.
 
-### 9. Under the hood (45 s)
+### 16. Verdicts, unexpected result, limits (60 s)
+- All five hypotheses supported.
+- Be upfront: "Our branch-free control got flagged under one specific condition. We tested the obvious explanations and report it as unexplained. That's why our cache conclusions rest on the evicted runs."
+- Detection ≠ exploitation; non-detection ≠ proof.
 
-- "We checked that the compiler kept our intentions: the branch survives as
-  `tbnz`; the constant-time S-box has zero branches and zero table lookups."
-- "We caught OpenSSL with a debugger: hardware by default, and portable C
-  when detection is disabled."
+### 17. Part II divider (5 s)
 
-### 10. Limitations (45 s)
+### 18. From Part I to Part II (45 s)
+- "Constant-time belongs to machine code. Compilers breaking it is known for C. Rust has its own mechanisms that nobody has measured."
+- Name them: `subtle::Choice` and its barrier, the Choice → bool boundary, Rust build settings.
 
-- Be upfront about the unexplained effect. "Our branch-free control got
-  flagged under one specific condition. We tested five explanations and
-  ruled most out. We report it as unexplained, and it's why we base our
-  cache conclusions on the evicted runs."
-- Detection ≠ exploitation. Non-detection ≠ proof.
+### 19. Research questions and design (50 s)
+- RQ3, binary violation versus measurable leakage, is the centre.
+- Two stages: screen many builds cheaply, measure the flagged ones plus a random unflagged sample to estimate what the screen misses.
 
-### 11. Conclusions (30 s)
+### 20. Platforms, software, roadmap (30 s)
+- Bare-metal Linux is the primary platform because the Mac has no cycle counter or core pinning (lesson from Part I).
+- Decision gates with outcomes fixed in advance.
 
-- Read the scorecard. Two take-aways. Questions.
+### 21. Conclusions (30 s)
+- Read the two take-aways: use hardware AES, and verify it's selected; constant-time is a property of machine code on a CPU.
+
+### 22. References and tools (10 s)
+- Leave up during questions. Mention that ChatGPT was used, and how.
+
+### 23. Thank you / questions
 
 ---
 

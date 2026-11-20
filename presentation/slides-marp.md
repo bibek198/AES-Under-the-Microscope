@@ -14,6 +14,8 @@ style: |
   .big { font-size: 64px; font-weight: 800; }
   section.lead { background: #121211; color: #f0efec; }
   section.lead h1 { color: #f0efec; font-size: 64px; }
+  section.lead h2 { color: #f0efec; }
+  section.compact { font-size: 23px; }
   section.lead strong { color: #e66767; }
 ---
 
@@ -101,6 +103,21 @@ All five agree on **100,000 random inputs** · ASan/UBSan clean
 
 ---
 
+<!-- _class: compact -->
+
+## What we built
+
+![bg right:40% fit](img/dash_race.png)
+
+- **`aes_project`**: one C++20 binary, 10 commands (`test`, `bench`, `leakage`, `trace`, `recover` …). It won't time anything until the self-test passes
+- **Harness**: coin flip → identical input prep → (evict) → time B encryptions → Welch t
+- **Analysis**: Python recomputes every statistic from the raw samples and draws figures F1–F5
+- **Dashboard**: offline web app, fed live by the binary through a local server. Encrypt · Speed · Leakage · Attack · Profile · Assembly · Verdict
+
+<span class="small">~2,700 lines of C++ · 3 ctest suites + ASan/UBSan · 110-check end-to-end suite</span>
+
+---
+
 <!-- _class: lead -->
 
 # Live demo
@@ -171,3 +188,23 @@ Round Explorer → Speed → **Leakage Race** → **Key Recovery** → Compiler 
 - "Constant-time" is a property of machine code on a CPU, not of source code
 
 **Future work:** cycle counters · DIT on whole implementations · Prime+Probe · bit-sliced AES
+
+---
+
+## References & tools
+
+<div class="small">
+
+- NIST **FIPS 197** (AES) · **SP 800-38A** (test vectors) · Daemen & Rijmen, *The Design of Rijndael*, 2002
+- Kocher, CRYPTO 1996 · Bernstein, *Cache-timing attacks on AES*, 2005 · Osvik, Shamir & Tromer, CT-RSA 2006
+- Goodwill et al., TVLA, NIAT 2011 · Reparaz et al., *Dude, is my code constant time?*, DATE 2017 · Welch, *Biometrika*, 1947
+- Käsper & Schwabe, CHES 2009 · Hamburg, CHES 2009
+- Chen et al., **GoFetch**, USENIX Security 2024 · Kim et al., **FLOP**, USENIX Security 2025 · Kim et al., **SLAP**, IEEE S&P 2025
+
+**Libraries:** OpenSSL 3.6.1 · Chart.js 4.4.7 · NumPy · SciPy · pandas · Matplotlib · CMake · Apple Clang 21 · Marp
+
+**AI tools:** ChatGPT (OpenAI), used for [Bibek: what it was used for]
+
+**Code, report & data:** README · `report/report.md` · `results/full-20261117-0301/`
+
+</div>
