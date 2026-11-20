@@ -1,0 +1,14 @@
+\chapter*{\normalsize ABSTRACT}
+\begingroup\setstretch{1.25}
+\addcontentsline{toc}{chapter}{Abstract}
+
+AES-128 has resisted more than two decades of cryptanalysis, yet a software implementation of it can still reveal secrets through how long it takes to run. This report studies that gap between the cipher and its implementation in two parts.
+
+\textbf{Part I, AES Under the Microscope,} is a completed experimental study. AES-128 was implemented four ways in C++20: a textbook version, a T-table version, a constant-time version with a computed S-box, and a version using the ARMv8 AES instructions. They were compared with OpenSSL 3.6.1. All five reproduce the FIPS-197 and SP 800-38A test vectors and agree on 100,000 random inputs. On an Apple M4, the fixed-versus-random Welch $t$-test used in leakage assessment (TVLA, dudect) was applied with $10^6$ samples per configuration, a random-versus-random negative control and an intentionally injected secret-dependent branch as a positive control. The positive control was detected at $\lvert t\rvert = 655$ and the negative control stayed at $\lvert t\rvert = 1.02$. With the cache flushed before every encryption, the T-table implementation leaked ($\lvert t\rvert = 18.8$, 3.1~ns per encryption), while the constant-time and hardware implementations showed no detectable leakage ($\lvert t\rvert \le 1.10$). OpenSSL used the hardware instructions by default. With hardware detection disabled, it fell back to a portable table-based routine that was 4.5$\times$ slower and was flagged. One unexpected result is also reported: in a hot-cache, long-batch regime, branch-free code with a data-dependent load was flagged, which shows why statistical detection must be interpreted together with the machine code. The work produced a reusable measurement system: a command-line program, an analysis pipeline and an offline interactive dashboard.
+
+\textbf{Part II, ChronoLeak,} is the research plan that follows from Part I. Part I showed that constant-time behaviour is a property of the machine code on a specific processor, not of the source code. Part II asks how Rust-specific constant-time mechanisms (the \texttt{subtle} crate's \texttt{Choice} type and optimisation barriers, \texttt{core::hint::black\_box}) and rustc/LLVM compiler settings preserve or break secret-independent execution, and when the resulting violations become statistically observable at runtime. The literature review places this question against recent work on compiler-induced constant-time violations in C. The plan sets out research questions, a two-stage experimental design, the platforms and analysis tools, and explicit decision gates.
+
+\vspace{0.2cm}
+\noindent\textbf{Keywords:} AES; timing side channel; cache-timing attack; constant-time cryptography; TVLA; dudect; Welch's $t$-test; Apple Silicon; compiler optimisation; Rust.
+\endgroup
+\clearpage

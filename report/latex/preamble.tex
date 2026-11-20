@@ -1,0 +1,93 @@
+% Preamble for the ChronoLeak course project report (NIT Warangal report style).
+% Compile with:  tectonic -X compile main.tex
+\documentclass[12pt,a4paper]{report}
+
+% NIT Warangal margins: 35 mm binding side, 25 mm elsewhere
+\usepackage[a4paper,left=35mm,right=25mm,top=25mm,bottom=25mm]{geometry}
+
+\usepackage{amsmath,amssymb}
+\usepackage{unicode-math}
+\setmainfont{texgyretermes}[Extension=.otf, UprightFont=*-regular, BoldFont=*-bold, ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\setmathfont{texgyretermes-math.otf}
+\setmonofont{texgyrecursor}[Extension=.otf, UprightFont=*-regular, BoldFont=*-bold, ItalicFont=*-italic, BoldItalicFont=*-bolditalic, Scale=0.95]
+\usepackage{setspace}
+\onehalfspacing
+\setlength{\parindent}{1.25cm}
+\setlength{\parskip}{4pt}
+\sloppy
+\emergencystretch=3em
+
+\usepackage{graphicx}
+% Figures are used straight from the recorded run and the dashboard screenshots (no copies).
+\graphicspath{{../../results/full-20261117-0301/figures/}{../../presentation/img/}}
+\usepackage{booktabs,array,tabularx,multirow,longtable}
+\newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=4pt}
+
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\footnotesize, breaklines=true, frame=single, columns=fullflexible, showstringspaces=false, backgroundcolor=\color{gray!6}}
+\renewcommand{\lstlistingname}{Listing}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc,shapes.geometric,backgrounds}
+
+% ---- One look for every diagram ------------------------------------------------------------
+% Colours have one meaning throughout: orange = cryptographic implementations,
+% blue = measurement software, green = analysis and results, grey = notes.
+\colorlet{clImpl}{orange!14}
+\colorlet{clSw}{blue!8}
+\colorlet{clRes}{green!12}
+\colorlet{clNote}{gray!12}
+\colorlet{clLine}{black!75}
+\colorlet{leak}{red!70!black}
+\tikzset{
+  every picture/.style={font=\footnotesize, line cap=round},
+  box/.style={draw=clLine, rounded corners=3pt, align=center, font=\footnotesize, inner sep=4pt, minimum height=9mm, line width=0.6pt},
+  impl/.style={box, fill=clImpl},
+  sw/.style={box, fill=clSw},
+  res/.style={box, fill=clRes},
+  note/.style={draw=black!55, fill=clNote, align=center, font=\footnotesize, inner sep=4pt, line width=0.5pt},
+  layer/.style={draw=black!50, fill=gray!6, rounded corners=4pt, line width=0.6pt},
+  ttl/.style={font=\small\bfseries},
+  arr/.style={-{Latex[length=2.2mm]}, line width=0.8pt, draw=black!80},
+  darr/.style={arr, dashed},
+}
+
+% Chapter headings in the style of the sample report
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\centering\normalfont\bfseries}
+  {\large CHAPTER \thechapter}{6pt}{\Large\MakeUppercase}
+\titlespacing*{\chapter}{0pt}{-10pt}{18pt}
+\titleformat{\section}{\normalfont\large\bfseries}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\normalfont\normalsize\bfseries}{\thesubsection}{0.8em}{}
+\titlespacing*{\section}{0pt}{14pt}{6pt}
+\titlespacing*{\subsection}{0pt}{10pt}{4pt}
+
+% Captions: "Figure 3.1:" / "Table 3.1:"
+\usepackage[font=small,labelsep=colon,skip=6pt]{caption}
+
+% Table of contents with dotted leaders for chapters
+\usepackage{tocloft}
+\renewcommand{\cftchapleader}{\cftdotfill{\cftdotsep}}
+\renewcommand{\cftchappresnum}{Chapter }
+\setlength{\cftchapnumwidth}{5.6em}
+\renewcommand{\contentsname}{Table of Contents}
+
+% Part pages (Part I / Part II) appear in the table of contents
+\renewcommand{\cftpartfont}{\bfseries}
+
+\pagestyle{plain}
+
+\usepackage[hypertexnames=false]{hyperref}
+\hypersetup{colorlinks=true,linkcolor=black,citecolor=black,urlcolor=black}
+\urlstyle{same}
+
+\setcounter{tocdepth}{1}
+
+% Short-hands used throughout
+\newcommand{\abst}[1]{\lvert t\rvert = #1}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\tick}{\tikz[baseline=-0.15ex]\draw[line width=0.75pt, line cap=round, line join=round] (0,0.45ex) -- (0.28em,0.05ex) -- (0.72em,1.15ex);}

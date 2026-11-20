@@ -1,0 +1,62 @@
+\chapter{Introduction}
+\label{ch:intro}
+
+\section{Motivation}
+
+The Advanced Encryption Standard (AES)~\cite{fips197} has withstood more than two decades of public cryptanalysis. No practical attack on the full cipher is known. Attacks on deployed AES, however, rarely target the mathematics. They target the \emph{implementation}. In 1996 Kocher~\cite{kocher96} showed that the time a cryptographic operation takes can leak the secret key. In 2005 Bernstein~\cite{bernstein05} and Osvik, Shamir and Tromer~\cite{osvik06} showed that the table lookups used by fast software AES leak key material through the processor cache.
+
+The standard defence is \emph{constant-time} programming: code whose control flow and memory-access pattern do not depend on secret data. This is harder than it sounds, for two reasons. First, the code that runs is not the source code a programmer wrote but the machine code a compiler produced from it, and compilers have no notion of time. Second, a modern processor such as Apple's M-series contains predictors and prefetchers that can make even ``constant-time'' machine code behave differently for different data~\cite{gofetch,flop,slap}.
+
+This project asks how much of a timing leak comes from the source code, how much from the compiler, and how much from the processor, and it answers the question by measurement rather than by argument.
+
+\section{Objectives}
+
+\begin{enumerate}
+  \item Implement AES-128 in several strategies that are functionally identical but differ in their side-channel properties, and validate them against the official test vectors~\cite{fips197,sp80038a}.
+  \item Build a measurement system that can detect timing leakage with a standard statistical test (fixed-versus-random, TVLA/dudect~\cite{tvla,dudect}) and prove that the system works with positive and negative controls.
+  \item Measure every implementation on a real processor (Apple M4), check each conclusion against the generated assembly, and state the limits of what the measurements show.
+  \item Review the literature on compiler-induced constant-time violations, and use the results of the measurement study to define a sharper research question for the next stage of the work.
+\end{enumerate}
+
+\section{Structure of the work: two parts}
+
+The project is organised in two parts under the name \emph{ChronoLeak} (Figure~\ref{fig:twoparts}).
+
+\textbf{Part I, AES Under the Microscope} (Chapters~\ref{ch:aessys} and~\ref{ch:aesres}), is complete. It is an experimental study of five AES-128 implementations on Apple M4 with a working measurement system, recorded results and an interactive dashboard.
+
+\textbf{Part II, ChronoLeak} (Chapter~\ref{ch:chronoleak}), is the second step. Part I showed that constant-time behaviour belongs to machine code on a specific processor. Part II takes that observation to Rust cryptographic libraries, where the language offers its own constant-time abstractions and the compiler (rustc with LLVM) has many settings that may preserve or break them. Part II is a research plan: it states questions, hypotheses, an experimental design and decision gates, and reports no results yet.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[node distance=6mm and 8mm]
+  \node[impl, text width=5.6cm, minimum height=2.8cm] (p1) {\textbf{Part I: AES Under the Microscope}\\[2pt] \emph{completed}\\[3pt] 5 AES-128 implementations (C++20)\\ TVLA/dudect harness with controls\\ Apple M4, assembly inspection\\ CLI, analysis pipeline, dashboard};
+  \node[sw, right=1.4cm of p1, text width=5.6cm, minimum height=2.8cm] (p2) {\textbf{Part II: ChronoLeak}\\[2pt] \emph{research plan}\\[3pt] Rust constant-time mechanisms\\ rustc/LLVM configuration study\\ binary violation vs.\ runtime leakage\\ Linux x86-64 and AArch64};
+  \draw[arr] (p1.east) -- node[above, font=\footnotesize, align=center]{lessons,\\ method,\\ harness} (p2.west);
+  \node[note, below=6mm of $(p1.south)!0.5!(p2.south)$, text width=12.4cm] {Shared question: when does code that is written to be constant-time actually run in constant time, and when can a difference be measured?};
+\end{tikzpicture}
+\caption{The two parts of the ChronoLeak project.}
+\label{fig:twoparts}
+\end{figure}
+
+\section{Contributions}
+
+Part I contributes:
+\begin{itemize}
+  \item five AES-128 implementations, validated against FIPS-197 and SP 800-38A and cross-checked on 100,000 random inputs;
+  \item a reusable timing harness with randomised class interleaving, identical input preparation for both classes, cache eviction and automatic batch calibration;
+  \item pre-registered hypotheses, judged against a recorded run with positive and negative controls;
+  \item assembly-level verification of the security-relevant properties of each implementation;
+  \item an unexpected, documented observation: branch-free code flagged in one measurement regime on Apple M4;
+  \item an offline interactive dashboard that runs the C++ binary live or replays the recorded experiments.
+\end{itemize}
+
+Part II contributes a literature review of compiler-induced constant-time violations and a research plan that places Rust-specific constant-time mechanisms at the centre of the next study.
+
+\section{Levels of claim}
+
+Throughout the report five levels of claim are kept apart:
+(1) source-level behaviour, (2) machine-code behaviour, (3) runtime timing, (4) statistical evidence of leakage, and (5) practical exploitability. Part I provides evidence for levels 1--4 only. \textbf{Statistical detection is not exploitability, and non-detection is not a proof of constant time.}
+
+\section{Organisation of the report}
+
+Chapter~\ref{ch:bg} gives the background: the mathematics of AES-128, timing side channels and the fixed-versus-random test. Chapter~\ref{ch:lit} reviews the literature. Chapter~\ref{ch:aessys} describes the system built in Part I, and Chapter~\ref{ch:aesres} its methodology, results and discussion. Chapter~\ref{ch:chronoleak} presents the research plan for Part II. Chapter~\ref{ch:concl} concludes. Appendix~\ref{app:repro} explains how to build, test and reproduce the work, and lists the tools, libraries and AI assistance used.

@@ -1,0 +1,209 @@
+\chapter{ChronoLeak: Compiler-Induced Timing Leakage in Rust Cryptography}
+\label{ch:chronoleak}
+
+Part I measured implementations whose side-channel properties were chosen by hand. Its main lesson was that constant-time behaviour is decided by the machine code and the processor, not by the source. Part II applies that lesson to a harder setting: cryptographic libraries written in Rust, a language with its own constant-time abstractions and a compiler (rustc with the LLVM backend) whose many settings may preserve or break them. This chapter is a research plan. It reports no results.
+
+\section{Problem statement and research gap}
+
+Compiler-induced constant-time violations have been studied at scale for C libraries~\cite{breakingbad,funwithflags,docc}. Because rustc uses LLVM, it is predictable that it can introduce similar violations; simply confirming this would add little. What has not been studied is the behaviour of the mechanisms that are \emph{specific to Rust}:
+
+\begin{itemize}
+  \item \code{subtle::Choice} and its default volatile optimisation barrier, and the alternative \code{core\_hint\_black\_box} feature~\cite{subtle};
+  \item \code{core::hint::black\_box}, studied strictly as a contrast, since it is documented as best-effort~\cite{blackbox};
+  \item the boundary where a \code{Choice} is converted back into a \code{bool} (for example \code{unwrap\_u8()} or \code{bool::from(choice)} followed by an \code{if}, or a length check before \code{ct\_eq}), and naive Rust idioms such as \code{==} on slices or \code{match} on secrets;
+  \item Rust-specific build settings: MIR optimisation, monomorphisation and inlining, \code{codegen-units}, LTO modes (off, thin, fat), \code{target-cpu} and \code{target-feature};
+  \item backend choices inside crates, such as the serial, fiat and SIMD backends of \code{curve25519-dalek};
+  \item the emerging LLVM constant-time selection intrinsic~\cite{tobctselect}, monitored as a possible future mitigation.
+\end{itemize}
+
+The second gap is the link between binary analysis and measurement. Analysis tools report potential violations~\cite{ctgrind,microwalk,autobenchct}, but whether a given binary-level violation produces a measurable timing difference on real hardware is rarely established. Part I's hot-regime effect shows that the relationship is not simple in either direction.
+
+\section{Research questions}
+
+\begin{quote}
+\itshape How do Rust-specific constant-time mechanisms and compiler configurations affect the preservation of secret-independent execution in generated cryptographic binaries, and when do the resulting violations become statistically observable at runtime?
+\end{quote}
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{@{}P{0.08\textwidth}P{0.66\textwidth}P{0.16\textwidth}@{}}
+\toprule
+ID & Question & Priority \\
+\midrule
+RQ1 & \emph{What happens:} do Rust constant-time abstractions and barriers survive across rustc/LLVM configurations? & Core \\
+RQ2 & \emph{Why:} which compilation stage or optimisation pass introduces or preserves secret-dependent behaviour? & Core \\
+RQ3 & Which identified binary-level violations produce statistically measurable timing leakage on real hardware? & Core (centre of the study) \\
+RQ4 & How do architecture and controlled system load affect measurement reliability? & Robustness check \\
+\bottomrule
+\end{tabular}
+\caption{Research questions of Part II.}
+\label{tab:rqs}
+\end{table}
+
+\section{Hypotheses}
+
+\begin{itemize}
+  \item \textbf{H1:} Some combinations of Rust constant-time mechanism and compiler configuration produce secret-dependent control flow or memory access in the binary. \emph{Falsified if} no violation is found across the screened configurations.
+  \item \textbf{H2:} Violations concentrate at the \code{Choice}$\rightarrow$\code{bool} boundary and in naive idioms rather than inside \code{subtle}'s primitives. \emph{Falsified if} the primitives themselves are broken as often.
+  \item \textbf{H3:} Not every binary-level violation produces detectable timing leakage. \emph{Falsified if} every confirmed violation is detected at the planned sample size.
+  \item \textbf{H4:} Architecture and data-independent timing modes (DIT, DOITM) change whether a violation is measurable. \emph{Falsified if} results are identical across platforms and modes.
+\end{itemize}
+
+\section{Study objects}
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{@{}P{0.24\textwidth}P{0.66\textwidth}@{}}
+\toprule
+Object & Role \\
+\midrule
+\code{subtle} & Barrier variants: volatile (default) vs.\ \code{core\_hint\_black\_box} vs.\ no barrier \\
+\code{curve25519-dalek} & Field and scalar arithmetic, conditional selection; per-backend comparison \\
+\code{k256} & ECDSA signing and field arithmetic, for comparison \\
+\code{ml-dsa} pre-/post-fix & Known source-level positive control (RUSTSEC-2025-0144)~\cite{rustsec2025_0144} \\
+Synthetic controls & Hand-written leaky and constant-time Rust functions, as in Part I \\
+\bottomrule
+\end{tabular}
+\caption{Planned study objects. Exact versions will be pinned.}
+\label{tab:targets}
+\end{table}
+
+Each target must pass an initial source audit (a constant-time claim, a test harness and a reproducible build) before it is included.
+
+\section{Experimental design}
+
+\subsection{Two-stage design}
+
+The full configuration space is large. With 4 targets, 3 rustc versions, 5 optimisation levels (1, 2, 3, s, z), 3 LTO modes, 2 codegen-unit settings, 2 CPU settings and 2 architectures there are $4\times3\times5\times3\times2\times2\times2 = 1{,}440$ builds before any timing. Part II therefore uses two stages (Figure~\ref{fig:pipeline}).
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[node distance=6mm and 5mm]
+  \node[impl, text width=3.0cm] (src) {Rust targets\\ + barrier variants};
+  \node[sw, right=of src, text width=3.0cm] (build) {Builds\\ fractional design\\ per target/arch};
+  \node[sw, right=of build, text width=3.2cm] (stat) {\textbf{Stage A}\\ static/dynamic screen\\ taint analyser + asm diff};
+  \node[res, below=10mm of stat, text width=3.2cm] (meas) {\textbf{Stage B}\\ dudect-style timing\\ on bare-metal Linux};
+  \node[res, left=of meas, text width=3.0cm] (corr) {Binary-to-runtime\\ correlation, MDE};
+  \node[note, left=of corr, text width=3.0cm] (sel) {Measured: flagged builds, controls, random unflagged sample};
+  \draw[arr] (src) -- (build); \draw[arr] (build) -- (stat); \draw[arr] (stat) -- (meas); \draw[arr] (meas) -- (corr);
+  \draw[darr] (sel) -- (corr);
+  \node[note, above=5mm of build, text width=6.8cm] {Attribution on nightly: \code{--emit=mir,llvm-ir}, \code{-Zmir-opt-level}, LLVM pass bisection};
+\end{tikzpicture}
+\caption{Planned two-stage pipeline of Part II.}
+\label{fig:pipeline}
+\end{figure}
+
+\textbf{Stage A, broad screening.} Targets and architectures are fixed strata; only the compiler factors are fractionated within each stratum (a resolution-IV fractional design or covering array). Every build is screened with one primary secret-taint analyser plus an assembly diff as a diagnostic. Debug builds are a contrast only.
+
+\textbf{Stage B, targeted measurement.} Timing is measured for all confirmed or strongly suspected violations, the positive and negative controls, and a random sample of unflagged builds. The random sample is essential: without it, the false-negative rate of Stage A cannot be estimated.
+
+\subsection{Measurement protocol}
+
+The Part I protocol is reused: randomised class interleaving, identical input preparation, warm-up, the primary statistic fixed in advance ($\lvert t\rvert > 4.5$), effect sizes, confidence intervals and multiple-testing correction. Sample sizes come from pilot variance and power analysis, and the \textbf{minimum detectable effect} is reported for every configuration with no detection, so that ``no leak found'' is never read as ``too noisy to find one''. \code{dudect-bencher}~\cite{dudectbencher} serves as an independent reference implementation, so the measurement engine is not validated only by its own output.
+
+\subsection{Toolchain policy}
+
+Headline results use stable rustc releases. Nightly is used only for attribution (MIR opt-level control, LLVM pass bisection, IR emission), and any future \code{ct\_select} intrinsic would also be nightly-only. Both toolchains are pinned with \code{rust-toolchain.toml}.
+
+\subsection{Violation taxonomy}
+
+Findings are classified as (i) secret-dependent branch, (ii) secret-indexed memory access, or (iii) variable-latency instruction (such as division, and multiplication on some cores), with the data-independent timing mode (on/off) recorded where available.
+
+\section{Platforms and tools}
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{@{}P{0.24\textwidth}P{0.66\textwidth}@{}}
+\toprule
+Platform & Role and requirements \\
+\midrule
+Linux x86-64 (primary) & Bare metal (not a VM): serialised \code{rdtscp}, CPU affinity and \code{isolcpus}, fixed frequency governor, turbo off, Valgrind support \\
+Linux AArch64 (second) & Raspberry Pi 5 or similar: PMU access where available, affinity, AArch64 assembly analysis \\
+Apple M4 (supplementary) & Real-world macOS data point; 24~MHz timer (Part I); DIT available \\
+\bottomrule
+\end{tabular}
+\caption{Experimental platforms.}
+\label{tab:platforms}
+\end{table}
+
+Analysis tools are chosen after a compatibility pilot on a small Rust crate built with the target toolchain: a ctgrind-style Valgrind taint analysis~\cite{ctgrind} (secrets marked through the Valgrind client-request interface) is the primary candidate, MicroWalk~\cite{microwalk} the second, and haybale-pitchfork~\cite{pitchfork} is time-boxed to two or three days because it documents support only for old LLVM versions.
+
+\section{ChronoLeak software}
+
+The framework is deliberately small: four Rust crates, with Python for statistics and plots and existing tools for binary analysis.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{@{}P{0.22\textwidth}P{0.68\textwidth}@{}}
+\toprule
+Crate & Responsibility \\
+\midrule
+\code{chrono-core} & Experiment schema, configuration, metadata and dataset structures \\
+\code{chrono-measure} & Timing collection, affinity, warm-up, isolation and scheduling \\
+\code{chrono-stats} & Interfaces for statistical results (analysis initially in Python) \\
+\code{chrono-cli} & Experiment execution, build scripts, orchestration and reporting \\
+\bottomrule
+\end{tabular}
+\caption{Initial ChronoLeak crates. Further crates are added only when an experiment needs them.}
+\label{tab:crates}
+\end{table}
+
+Builds and analyses may run in parallel, but timing measurements run one at a time; concurrent load is a deliberate experimental condition (RQ4), never accidental interference.
+
+\section{Roadmap and decision gates}
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{@{}P{0.16\textwidth}P{0.40\textwidth}P{0.34\textwidth}@{}}
+\toprule
+Weeks & Phase & Output / gate \\
+\midrule
+1--3 & Literature and novelty validation & Research dossier; check of Breaking Bad artefacts for Rust overlap \\
+4--5 & Platform and tooling validation & \textbf{Gate:} bare-metal Linux x86-64 secured; analyser chosen \\
+6--8 & Rust-specific pilot on \code{subtle} & \textbf{Gate:} expand, reframe or stop (below) \\
+9--12 & ChronoLeak MVP & Working measurement framework \\
+13--15 & Static screening and binary analysis & Compiler behaviour dataset \\
+16--19 & Runtime and architecture experiments & Validated timing results \\
+20--21 & Robustness checks & Extended evaluation \\
+22--24 & Writing and independent reproduction & Paper draft and research package \\
+\bottomrule
+\end{tabular}
+\caption{24-week roadmap with decision gates.}
+\label{tab:roadmap}
+\end{table}
+
+The pilot gate has three pre-defined outcomes: (a) a barrier fails under some configuration, so the study expands; (b) the barriers hold but the \code{Choice}$\rightarrow$\code{bool} boundary or naive idioms break and are measurable, so the study is reframed around the robustness of the mechanisms; (c) nothing breaks and nothing is measurable, so the work pivots to an ``observability limits'' framing or stops.
+
+\section{Risks and mitigation}
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{@{}P{0.38\textwidth}P{0.52\textwidth}@{}}
+\toprule
+Risk & Mitigation \\
+\midrule
+No Rust-specific violations found & Boundary and idiom study; report a rigorous negative result \\
+Violations not measurable & Report the minimum detectable effect; vary architecture and DIT/DOITM \\
+Timing noise dominates & Bare-metal isolation, randomisation, pilot-based power analysis \\
+Existing tools already cover the idea & Use them as baselines; focus on the binary-to-runtime gap \\
+Only one architecture available & Treat cross-architecture validation as a limitation \\
+A real vulnerability is found & Start responsible disclosure as soon as it is confirmed \\
+\bottomrule
+\end{tabular}
+\caption{Main risks of Part II.}
+\label{tab:risks}
+\end{table}
+
+One rule carries over from Part I without exception: a noisy timing difference is never interpreted as a security vulnerability.

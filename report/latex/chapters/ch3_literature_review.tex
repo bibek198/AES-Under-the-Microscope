@@ -1,0 +1,90 @@
+\chapter{Literature Review}
+\label{ch:lit}
+
+This project sits where several research areas meet: classical timing and cache attacks on AES, statistical leakage assessment, constant-time implementation techniques, microarchitectural attacks on Apple processors, and the recent work on how compilers break constant-time code. The work is grouped by theme. For each theme, the review notes what this project borrows and what remains open.
+
+\section{Timing and cache attacks on AES}
+\label{sec:lit_attacks}
+
+Kocher~\cite{kocher96} introduced timing attacks in 1996, recovering private keys from Diffie-Hellman, RSA and DSS implementations whose running time depended on secret exponent bits. The paper established that a mathematically secure algorithm can be broken through a physical property of its implementation.
+
+Bernstein~\cite{bernstein05} applied the idea to AES in 2005. He showed that the time taken by OpenSSL's table-based AES depended on which S-box table entries were already in the cache, and he recovered a key from a server that reported its own timing. His report also listed obstacles to writing constant-time table lookups on real processors. Osvik, Shamir and Tromer~\cite{osvik06} systematised cache attacks on AES with two techniques that are still the basis of the field: \emph{Evict+Time}, where the attacker evicts cache sets and measures the victim's total encryption time, and \emph{Prime+Probe}, where the attacker fills cache sets and later measures which of its own lines were evicted.
+
+\textbf{Borrowed for this project:} the cache-eviction measurement condition of Part I is a simplified Evict+Time setting, and the T-table implementation reproduces the leaky design these papers attacked. \textbf{Open point:} these attacks were developed on x86 processors with 64-byte cache lines and small L1 caches. How they appear on a processor with 128-byte lines and a 128~KB L1 data cache (Apple M4) is an empirical question that Part I measures.
+
+\section{Statistical leakage assessment}
+\label{sec:lit_tvla}
+
+Goodwill, Jun, Jaffe and Rohatgi~\cite{tvla} proposed Test Vector Leakage Assessment (TVLA) at the NIST Non-Invasive Attack Testing workshop in 2011. Instead of mounting a specific attack, TVLA compares measurements taken with a fixed input against measurements with random inputs, using Welch's $t$-test~\cite{welch47} with a threshold of $\lvert t\rvert = 4.5$. The method was designed for power and electromagnetic traces but transfers directly to timing. Reparaz, Balasch and Verbauwhede~\cite{dudect} did exactly that with \emph{dudect} (``Dude, is my code constant time?'', DATE 2017): many timing measurements of a function under fixed and random input classes, randomised interleaving of classes, cropping of outliers at several percentiles, and a running Welch's $t$. The \code{dudect-bencher} crate~\cite{dudectbencher} implements the same method for Rust.
+
+\textbf{Borrowed:} the fixed-versus-random protocol, the 4.5 threshold, randomised interleaving and percentile cropping. \textbf{Added in Part I:} explicit positive and negative controls, robust rank-based statistics, Holm correction across all tests, and a minimum detectable difference that bounds every non-detection.
+
+\section{Constant-time AES implementations}
+\label{sec:lit_ctaes}
+
+Käsper and Schwabe~\cite{kasper09} showed that AES can be implemented without any secret-indexed memory access through \emph{bit-slicing}, processing eight blocks in parallel with bitwise operations, while remaining fast on processors with wide registers. Hamburg~\cite{hamburg09} reached the same goal with vector permute instructions that perform a 16-entry table lookup inside a register, so no memory address depends on the secret. Both approaches are used in OpenSSL (\code{bsaes} and \code{vpaes}). Hardware AES instructions remove the problem altogether, because the S-box is implemented inside the execution unit.
+
+\textbf{Borrowed:} the constant-time implementation of Part I follows the same principle by computing the S-box as $A(a^{254})$ in a SWAR fashion, without tables or branches. \textbf{Open point:} these designs argue constant-time behaviour at the source and instruction level; on a specific modern processor, the claim should also be tested empirically.
+
+\section{Microarchitectural attacks on Apple Silicon}
+\label{sec:lit_apple}
+
+Three recent attacks show that Apple's processors contain optimisation hardware that can undermine source-level constant-time reasoning. GoFetch~\cite{gofetch} (USENIX Security 2024) exploited the \emph{data memory-dependent prefetcher} (DMP) of Apple M-series chips: if a value loaded from memory looks like a pointer, the DMP may prefetch it, so data values, not just addresses, influence the cache. The authors extracted keys from constant-time implementations of classical and post-quantum cryptography. SLAP~\cite{slap} (IEEE S\&P 2025) and FLOP~\cite{flop} (USENIX Security 2025) showed that Apple processors include a \emph{load address predictor} and a \emph{load value predictor}, and that their mispredictions can be used to read memory speculatively. FLOP reports that the load value predictor activates for loads that repeatedly return the same value.
+
+\textbf{Relevance:} Part I runs on an Apple M4. One of its results, branch-free code flagged only when the same input is repeated in long batches, is consistent in spirit with predictor state that persists across executions, although Part I does not confirm a mechanism.
+
+\section{Compiler-induced constant-time violations}
+\label{sec:lit_compilers}
+
+The most directly relevant work for Part II asks whether compilers break code that was written to be constant-time.
+
+\textbf{Breaking Bad} (Schneider, Lain, Puddu, Dutly and Čapkun, ASIA CCS 2025)~\cite{breakingbad} is a large-scale study of compiler-induced secret-dependent operations. It analyses eight cryptographic libraries across six processor architectures with many compiler versions and optimisation settings, and finds compiler-induced secret-dependent operations in some of the most highly regarded hardened libraries. The authors conclude that defensive source-level programming is not sufficient once compiler optimisations are applied. The evaluated libraries are C libraries; the paper does not identify Rust crates among its targets.
+
+\textbf{Fun with Flags} (Geimer and Maurice, PriSC 2026)~\cite{funwithflags} builds a dataset of compiler-introduced constant-time violations in GCC and LLVM and traces most of them to a small number of optimisation passes. It proposes disabling those passes through compiler flags, which removes the compiler-introduced violations in its dataset at low performance cost.
+
+\textbf{DOCC} (Gerlach, Pietsch and Schwarz, FC 2025)~\cite{docc} is an automated binary testing pipeline that compiles cryptographic code under many compiler configurations and tests the binaries for data-obliviousness violations. It reports violations in 93 of 127 tested algorithms.
+
+\textbf{RoboCop} (Kolosick et al., PLDI 2025)~\cite{robocop} approaches the problem from the defensive side: a compiler-based toolchain that generates protected cryptographic library code tailored to the application it is linked against, including protection from speculative read gadgets, with low overhead.
+
+Industry work is moving in the same direction. Trail of Bits proposed constant-time selection support for LLVM (\code{llvm.ct.select}, pull request \#166702) so that a compiler would be obliged to keep a selection branch-free~\cite{tobctselect}. Development continued through 2026. Rust is listed as a possible future user, but no Rust integration was found at the time of writing. An earlier Trail of Bits series examined how Rust cryptographic code relies on LLVM optimisation barriers~\cite{tobrust}.
+
+\section{Constant-time analysis tools}
+\label{sec:lit_tools}
+
+Several tools detect constant-time violations without timing measurements. \textbf{ctgrind}~\cite{ctgrind} marks secret memory as uninitialised for Valgrind's memcheck, so any branch or address that depends on a secret is reported. \textbf{MicroWalk}~\cite{microwalk} (ACSAC 2018) combines dynamic binary instrumentation with mutual-information analysis to find and quantify memory- and control-flow-based leakage, and was applied to Intel IPP and Microsoft CNG. \textbf{haybale-pitchfork}~\cite{pitchfork} checks constant-time properties of LLVM IR by symbolic execution, which makes it directly applicable to Rust, but it documents support for old LLVM versions only. \textbf{AutoBench-CT}~\cite{autobenchct} (IACR ePrint 2026/2682) is a benchmark of 64 cryptographic tasks with manually verified ground truth, used to evaluate seven constant-time analysis tools; the authors report that ctgrind remains the most widely used tool in practice.
+
+\section{The Rust cryptography ecosystem}
+\label{sec:lit_rust}
+
+Rust cryptographic libraries such as \code{curve25519-dalek} and the RustCrypto crates rely on the \code{subtle} crate~\cite{subtle} for constant-time selection and comparison. \code{subtle} represents secret booleans as \code{Choice}, an opaque byte, and by default passes it through a volatile read so that the compiler cannot treat it as a boolean and introduce a branch. Since version 2.5 an optional feature uses \code{core::hint::black\_box} instead. The Rust standard library documents \code{black\_box} as best-effort and not suitable for security guarantees~\cite{blackbox}.
+
+Two real vulnerabilities frame the problem. RUSTSEC-2025-0144 (CVE-2026-22705)~\cite{rustsec2025_0144} is a timing side channel in the RustCrypto \code{ml-dsa} crate: the Decompose step used a variable-time integer division in the source code. It was fixed by replacing the division with a constant-time Barrett reduction. It is a source-level bug, not a compiler-introduced one, and is useful as a known positive control. CVE-2025-12888~\cite{cve2025_12888} describes a timing side channel in an X25519 implementation on Xtensa (ESP32) processors attributed to compiler optimisation and architecture limitations, a real-world example of the compiler-induced class.
+
+\section{Comparative summary and research gap}
+\label{sec:lit_gap}
+
+Table~\ref{tab:lit} summarises the reviewed work.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{@{}P{0.15\textwidth}P{0.26\textwidth}P{0.51\textwidth}@{}}
+\toprule
+Ref. & Area & What remains open for this project \\
+\midrule
+\cite{kocher96,bernstein05,osvik06} & Timing and cache attacks & Behaviour on 128-byte-line, large-L1 Apple cores \\
+\cite{tvla,dudect,welch47} & Leakage assessment & Need for controls and bounds on non-detection \\
+\cite{kasper09,hamburg09} & Constant-time AES & Empirical confirmation on a specific processor \\
+\cite{gofetch,slap,flop} & Apple microarchitecture & Effect of predictors on leakage tests is unquantified \\
+\cite{breakingbad,funwithflags,docc} & Compiler-induced violations & C libraries; Rust-specific mechanisms not studied \\
+\cite{robocop,tobctselect} & Compiler defences & Rust exposure of \code{ct.select} not available \\
+\cite{ctgrind,microwalk,pitchfork,autobenchct} & Analysis tools & Static/dynamic findings rarely linked to measured timing \\
+\cite{subtle,blackbox,rustsec2025_0144} & Rust ecosystem & No empirical study of barrier survival across rustc settings \\
+\bottomrule
+\end{tabular}
+\caption{Summary of the reviewed literature and the open points.}
+\label{tab:lit}
+\end{table}
+
+Two gaps follow. The first, addressed in Part I, is practical: a course-scale, fully controlled measurement of how classic AES implementation strategies behave on a current Apple processor, with every claim checked against the assembly. The second, addressed by the plan in Part II, is a research gap. Compiler-induced violations have been studied at scale for C, but the constant-time mechanisms specific to Rust (\code{subtle}'s \code{Choice} and its barriers, and the boundary where a \code{Choice} is converted back into a \code{bool}) and Rust-specific build settings (MIR optimisation, monomorphisation, codegen units, LTO modes) have not been studied empirically. Neither has the question of which binary-level violations actually become measurable at runtime.

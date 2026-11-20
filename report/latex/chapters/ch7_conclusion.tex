@@ -1,0 +1,21 @@
+\chapter{Conclusion and Future Work}
+\label{ch:concl}
+
+\section{Conclusion}
+
+All five AES-128 implementations studied in Part I are functionally identical, yet they behave very differently in time. Under a standard fixed-versus-random test on Apple M4, the injected branch leaked massively ($\lvert t\rvert = 655$), the T-table implementation leaked once the cache was flushed ($\lvert t\rvert = 18.8$, 3.1~ns per encryption), the constant-time software AES and the ARMv8 instructions showed no detectable leakage ($\lvert t\rvert \le 1.10$, with stated bounds), and OpenSSL was safe by default but fell back to a leaky table-based path when hardware detection was disabled. The negative control stayed at $\lvert t\rvert = 1.02$, showing the harness was calibrated.
+
+The most instructive result was the one that was not planned: branch-free code could still be flagged on a modern microarchitecture under one specific regime. Source-level reasoning, assembly inspection and statistics must be read together and never in isolation.
+
+Part I also produced a reusable measurement system: a self-testing command-line program, an independent analysis pipeline and an offline dashboard that makes every result visible and reproducible.
+
+\section{From Part I to Part II}
+
+If constant-time behaviour is decided by the compiler and the processor, the natural next question is how reliably a language's own constant-time mechanisms survive compilation. Part II, ChronoLeak, asks this for Rust, where \code{subtle}'s \code{Choice} and its optimisation barriers protect much of the ecosystem, and connects binary-level findings to what can actually be measured at runtime. The plan in Chapter~\ref{ch:chronoleak} fixes its questions, design and decision gates before any data is collected, as Part I did.
+
+\section{Future work}
+
+\begin{itemize}
+  \item For Part I: cycle-accurate measurement with performance counters; whole implementations with DIT enabled; a Prime+Probe attacker model; bit-sliced constant-time AES; identifying the mechanism behind the hot-regime effect.
+  \item For Part II: execute the plan of Chapter~\ref{ch:chronoleak}, starting with the platform and tooling gate and the \code{subtle} pilot.
+\end{itemize}

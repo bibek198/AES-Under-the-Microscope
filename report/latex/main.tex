@@ -1,0 +1,97 @@
+% ChronoLeak course project report.
+% Part I : AES Under the Microscope (completed experimental study)
+% Part II: ChronoLeak (research plan for the second step)
+% Build with scripts/docs.sh (or: tectonic -X compile main.tex, run inside report/latex/)
+\input{preamble.tex}
+\begin{document}
+
+% ---------------------------------------------------------------- title page
+\pagenumbering{roman}
+\begin{titlepage}
+\singlespacing
+\begin{center}
+\vspace*{-1.0cm}
+{\Large\bfseries ChronoLeak: Timing Side-Channel Leakage in\\ Cryptographic Implementations\par}
+\vspace{0.35cm}
+{\large Part I: AES Under the Microscope, an Experimental Study of AES-128 on Apple M4\\[0.1cm]
+Part II: Compiler-Induced Timing Leakage in Rust Cryptography (Research Plan)\par}
+\vspace{0.8cm}
+{\normalsize A course project report submitted for the course\par}
+\vspace{0.3cm}
+{\Large\bfseries Cryptography and Network Security\par}
+\vspace{0.3cm}
+{\normalsize in partial fulfilment of the requirements for the degree of\par}
+\vspace{0.2cm}
+{\large\bfseries Bachelor of Technology\par}
+\vspace{0.1cm}
+{\normalsize in\par}
+\vspace{0.1cm}
+{\large Electronics and Communication Engineering\par}
+\vspace{0.7cm}
+{\normalsize Submitted by\par}
+\vspace{0.3cm}
+{\large Bibek Chaudhary (23ECB0F33)\par}
+\vspace{0.7cm}
+{\normalsize Under the guidance of\par}
+\vspace{0.3cm}
+{\large\bfseries Prof. Sourabh Solanki\par}
+\vspace{0.7cm}
+\includegraphics[width=2.5cm]{logo.png}\par
+\vspace{0.4cm}
+{\normalsize Department of Electronics and Communication Engineering\\
+\large\bfseries National Institute of Technology Warangal\par}
+\vspace{0.3cm}
+{\normalsize November 2026\par}
+\end{center}
+\end{titlepage}
+
+\setcounter{page}{2}
+\input{frontmatter/declaration.tex}
+\input{frontmatter/certificate.tex}
+\input{frontmatter/acknowledgements.tex}
+\input{frontmatter/abstract.tex}
+
+\begingroup
+\singlespacing
+\tableofcontents
+\clearpage
+\addcontentsline{toc}{chapter}{List of Figures}
+\listoffigures
+\clearpage
+\addcontentsline{toc}{chapter}{List of Tables}
+\listoftables
+\clearpage
+\input{frontmatter/abbreviations.tex}
+\endgroup
+
+% ---------------------------------------------------------------- chapters
+\clearpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\input{chapters/ch1_introduction.tex}
+\input{chapters/ch2_background.tex}
+\input{chapters/ch3_literature_review.tex}
+
+\part*{Part I: AES Under the Microscope}
+\addcontentsline{toc}{part}{Part I: AES Under the Microscope}
+\input{chapters/ch4_aes_system.tex}
+\input{chapters/ch5_aes_results.tex}
+
+\part*{Part II: ChronoLeak}
+\addcontentsline{toc}{part}{Part II: ChronoLeak}
+\input{chapters/ch6_chronoleak.tex}
+
+\input{chapters/ch7_conclusion.tex}
+
+% ---------------------------------------------------------------- references
+\clearpage
+\addcontentsline{toc}{chapter}{References}
+\renewcommand{\bibname}{References}
+\bibliographystyle{ieeetr}
+\bibliography{references}
+
+\appendix
+\input{chapters/appA_reproducibility.tex}
+
+\end{document}

@@ -1,0 +1,211 @@
+\chapter{AES Under the Microscope: System Design and Implementation}
+\label{ch:aessys}
+
+Part I asks a narrow, testable question:
+
+\begin{quote}
+\itshape On Apple M4, do different AES-128 implementation strategies show statistically detectable data-dependent timing under a standard fixed-versus-random leakage test? How much of the outcome comes from the source code, the compiled machine code and the microarchitecture?
+\end{quote}
+
+This chapter describes what was built to answer it. Chapter~\ref{ch:aesres} describes how it was used and what it found.
+
+\section{Five AES-128 implementations}
+\label{sec:impls}
+
+Table~\ref{tab:impls} lists the five implementations. All share one interface (\code{Aes128}: \code{set\_key}, \code{encrypt\_block}, \code{encrypt\_blocks}) and are created by name through a small factory.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{@{}P{0.12\textwidth}P{0.36\textwidth}P{0.22\textwidth}P{0.18\textwidth}@{}}
+\toprule
+ID & Strategy & Secret-indexed loads & Secret branches \\
+\midrule
+\code{ref} & Textbook FIPS-197 transformations, 256-byte S-box table & 32 (verified in assembly) & none \\
+\code{ttable} & Four 1~KB T-tables combining SubBytes, ShiftRows, MixColumns & 32 per round loop + final round & none \\
+\code{ct} & S-box computed as $A(a^{254})$, 8 bytes in parallel (SWAR) & \textbf{0} & \textbf{0} \\
+\code{armv8} & ARMv8 \code{AESE}/\code{AESMC} hardware instructions & 0 (S-box inside the unit) & 0 \\
+\code{openssl} & OpenSSL 3.6.1 EVP AES-128-ECB, context reused & path-dependent & -- \\
+\bottomrule
+\end{tabular}
+\caption{The five AES-128 implementations studied in Part I.}
+\label{tab:impls}
+\end{table}
+
+\code{ref} and \code{ttable} are labelled in the source as \emph{educational, not suitable for protecting real secrets}. ECB mode is used only as a single-block interface for measurement and must never be used for real data.
+
+\subsection{Positive control (intentionally vulnerable)}
+
+To prove that the harness \emph{can} detect a leak, a positive control injects a secret-dependent branch next to a hardware AES encryption. \code{pos\_leaky} computes $s = S[p_0 \oplus k_0]$, the first-round S-box output for byte 0, and if $s < \texttt{0x80}$ runs a fixed workload of 64 dependent multiply-adds. Its twin \code{pos\_twin} always does the work and selects the result with a bit mask. Both return identical results for all 256 values of $s$. \textbf{This branch is injected on purpose. It is not a weakness of AES.}
+
+\section{System architecture}
+\label{sec:arch}
+
+The project produced one working system with four parts (Figure~\ref{fig:arch}). Every number in this report comes from the C++ binary; Python only analyses the files the binary writes, and the dashboard only displays them.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+  \node[impl, text width=5.0cm] (core) at (-3.1,0) {\code{aes\_core}\\ 5 AES-128 implementations,\\ positive control and twin, trace};
+  \node[sw, text width=5.0cm] (harn) at (3.1,0) {\code{aes\_harness}\\ self-test $\rightarrow$ calibration $\rightarrow$ timing\\ $\rightarrow$ Welch $t$ $\rightarrow$ NDJSON};
+  \begin{scope}[on background layer]
+    \node[layer, fit=(core)(harn), inner xsep=4mm, inner ysep=4mm, yshift=3mm] (bin) {};
+  \end{scope}
+  \node[ttl, anchor=north west, inner sep=3pt] at (bin.north west) {\code{aes\_project} (C++20 command-line program)};
+  \draw[arr] (core) -- (harn);
+  \node[sw, text width=4.6cm] (col) at (-3.1,-2.4) {\code{scripts/collect.sh}\\ full experiment run};
+  \node[sw, text width=4.6cm] (srv) at (3.1,-2.4) {\code{demo/server.py} (127.0.0.1)\\ Server-Sent Events};
+  \node[res, text width=4.6cm] (raw) at (-3.1,-4.1) {\code{results/<run>/}\\ samples, bench, metadata};
+  \node[res, text width=4.6cm] (ana) at (-3.1,-5.8) {\code{analyze.py}, \code{figures.py}\\ statistics, verdicts, F1--F5};
+  \node[res, text width=4.6cm] (web) at (3.1,-4.1) {\code{demo/web/} dashboard\\ HTML, vanilla JS, Chart.js};
+  \draw[arr] (col.north |- bin.south) -- (col.north);
+  \draw[arr] (srv.north |- bin.south) -- (srv.north);
+  \draw[arr] (col) -- (raw); \draw[arr] (raw) -- (ana); \draw[arr] (srv) -- (web);
+  \draw[darr] (ana.east) -| node[pos=0.3, above, font=\footnotesize]{\code{dashboard.json} (replay)} (web.south);
+\end{tikzpicture}
+\caption{Architecture of the Part I measurement system.}
+\label{fig:arch}
+\end{figure}
+
+\subsection{Command-line program}
+
+One binary provides ten commands (Table~\ref{tab:cli}). Every command prints human-readable output, or NDJSON (one JSON object per line) with \code{--json}. The timing commands refuse to run unless the self-test passes, so no measurement is ever taken on incorrect AES.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}P{0.16\textwidth}P{0.74\textwidth}@{}}
+\toprule
+Command & What it does \\
+\midrule
+\code{test} & Known-answer self-test (FIPS-197, SP 800-38A) of every implementation \\
+\code{info} & Platform, caches, timer resolution, OpenSSL code path \\
+\code{bench} & Latency and throughput \\
+\code{leakage} & Fixed-vs-random $t$-test on one or all implementations, hot or evicted cache \\
+\code{controls} & Positive control, branch-free twin and A/A negative control \\
+\code{race} & All implementations interleaved, streamed live for the dashboard \\
+\code{trace} & Every intermediate AES state for a given key and plaintext \\
+\code{profile} & Mean time per value of plaintext byte 0 \\
+\code{recover} & Toy key-byte recovery against the injected branch or \code{ct} \\
+\code{all} & The whole experiment suite into \code{results/<run\_id>/} \\
+\bottomrule
+\end{tabular}
+\caption{Commands of the \code{aes\_project} program.}
+\label{tab:cli}
+\end{table}
+
+\subsection{Measurement harness}
+
+The harness implements the fixed-versus-random protocol of Section~\ref{sec:method}. For each sample it flips a fair coin to choose the class, prepares the input identically for both classes, optionally evicts the cache, times $B$ back-to-back encryptions, and updates running statistics (Welford mean and variance, Welch's $t$, and a cropped $t$).
+
+\subsection{Analysis pipeline}
+
+\code{analysis/analyze.py} reads the raw samples and recomputes Welch's $t$ independently of the C++ code. It adds robust statistics (percentile cropping, Mann--Whitney $U$, Kolmogorov--Smirnov, bootstrap medians, Holm correction, minimum detectable difference) and applies the pre-registered hypothesis verdicts. \code{analysis/figures.py} draws figures F1--F5.
+
+\subsection{Interactive dashboard}
+
+\code{demo/server.py} is a standard-library Python server bound to 127.0.0.1. It starts the binary with a fixed argument list (no shell), validates every user input, and forwards the binary's NDJSON output to the browser as Server-Sent Events. The page has seven views: Encrypt (Round Explorer and avalanche), Speed, Leakage race, Attack, Profile heat map, Assembly and Verdict. It works fully offline; a clearly labelled \emph{Replay} mode shows the recorded run if a live measurement is too noisy. Figures~\ref{fig:dash_explorer}--\ref{fig:dash_scorecard} in Chapter~\ref{ch:aesres} show the views.
+
+\section{Implementation details}
+\label{sec:impl}
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}P{0.18\textwidth}P{0.72\textwidth}@{}}
+\toprule
+Aspect & Detail \\
+\midrule
+Languages & C++20 (cryptography, measurement, CLI; about 2,700 lines), Python 3.10 (analysis, server), JavaScript (dashboard) \\
+Build & CMake $\ge$ 3.20, Apple Clang 21. Release flags \code{-O2 -mcpu=apple-m4} (enables the ARMv8 AES instructions); \code{-Wall -Wextra -Wpedantic -Wshadow -Wconversion}. An \code{-O0} build for the compiler experiment and an ASan + UBSan build for testing \\
+Libraries & \code{aes\_core} (implementations, no timing code) and \code{aes\_harness} (timer, harness, benchmarks, metadata, JSON, self-test) linked into \code{aes\_project} \\
+Dependencies & OpenSSL 3 \code{libcrypto} (Homebrew) for the \code{openssl} implementation; no other C++ dependencies \\
+\bottomrule
+\end{tabular}
+\caption{Implementation summary.}
+\label{tab:implsum}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{@{}P{0.36\textwidth}P{0.54\textwidth}@{}}
+\toprule
+File & Role \\
+\midrule
+\code{aes\_common.hpp/.cpp} & GF(2$^8$) arithmetic, compile-time S-box, key expansion, \code{Aes128} interface \\
+\code{aes\_ref.cpp} & Textbook rounds with a 256-byte S-box table \\
+\code{aes\_ttable.cpp} & Four 1~KB T-tables \\
+\code{aes\_ct.cpp} & Constant-time AES: S-box as $A(a^{254})$, 8 bytes at once \\
+\code{aes\_armv8.cpp} & ARMv8 \code{AESE}/\code{AESMC} intrinsics \\
+\code{aes\_openssl.cpp} & OpenSSL EVP AES-128-ECB with a reused context \\
+\code{controls.cpp} & Positive control and branch-free twin \\
+\code{factory.cpp} & Creates an implementation by name \\
+\code{timer.hpp/.cpp} & \code{mach\_absolute\_time()} between two \code{isb} barriers \\
+\code{harness.cpp} & Fixed-vs-random protocol, eviction, batch calibration, Welch $t$ \\
+\code{bench.cpp} & Latency (dependent chain) and throughput (independent blocks) \\
+\code{trace.cpp} & Every intermediate state, for the Round Explorer \\
+\code{selftest.cpp}, \code{kat\_vectors.hpp} & Known-answer vectors and runtime self-test \\
+\code{metadata.cpp}, \code{json\_out.cpp} & Run metadata and NDJSON output \\
+\code{main.cpp} & Command-line interface \\
+\bottomrule
+\end{tabular}
+\caption{Source files and their roles.}
+\label{tab:files}
+\end{table}
+
+Key implementation decisions:
+
+\begin{itemize}
+  \item \textbf{Timer.} \code{mach\_absolute\_time()} reads the 24~MHz system counter (41.67~ns per tick). An \code{isb} instruction-synchronisation barrier on each side keeps the timed instructions inside the window.
+  \item \textbf{Batching.} One encryption (7--170~ns) is shorter than or close to one tick, so in the hot condition the harness times $B$ back-to-back encryptions, with $B$ calibrated automatically so that a sample lasts about 2.5~$\mu$s (clamped to 1--8,192).
+  \item \textbf{Cache eviction.} Before each evicted sample, a 4~MB buffer is read at the 128-byte line stride, 32$\times$ the 128~KB L1D.
+  \item \textbf{Identical class preparation.} Random bytes are generated for every sample and the input buffer is always written by one 16-byte copy from either the fixed or the random source, outside the timed region, so the two classes cannot differ in how their input reaches memory.
+  \item \textbf{Optimiser control.} \code{do\_not\_optimize} and \code{clobber\_memory} stop the compiler from deleting or reordering the measured work without adding instructions.
+  \item \textbf{Randomness.} \code{std::mt19937\_64} with a recorded seed, so runs are reproducible. It is a measurement RNG, not a cryptographic one: the key is a public test key.
+  \item \textbf{Scheduling.} The thread runs at \code{QOS\_CLASS\_USER\_INTERACTIVE} to bias it towards performance cores; macOS offers no hard affinity.
+\end{itemize}
+
+\section{Correctness and testing}
+\label{sec:correct}
+
+All correctness tests pass (Table~\ref{tab:correct}). They run through \code{ctest} in the normal build and under AddressSanitizer + UndefinedBehaviorSanitizer, and \code{scripts/e2e.sh} runs a 110-check end-to-end suite covering every CLI command, the analysis pipeline, the server endpoints and the dashboard.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}P{0.70\textwidth}P{0.20\textwidth}@{}}
+\toprule
+Test & Result \\
+\midrule
+FIPS-197 C.1: key \code{00..0f}, pt \code{0011..ff} $\rightarrow$ \code{69c4e0d8 6a7b0430 d8cdb780 70b4c55a} & \tick{} all 7 variants \\
+FIPS-197 Appendix B ciphertext and round-1 intermediate states & \tick{} \\
+FIPS-197 A.1 key expansion (round keys 1 and 10) & \tick{} \\
+NIST SP 800-38A F.1.1 ECB-AES128, blocks 1--4 & \tick{} all 7 variants \\
+Computed S-box = table S-box on 256 inputs; no fixed points & \tick{} \\
+GF(2$^8$): FIPS-197 examples; $a\cdot a^{-1} = 1$ for all $a \ne 0$ & \tick{} \\
+100,000 random (key, plaintext) pairs, all implementations agree & \tick{} \\
+Bulk ECB path = block-by-block & \tick{} \\
+Debug build under ASan + UBSan & \tick{} no findings \\
+\bottomrule
+\end{tabular}
+\caption{Correctness tests (all pass).}
+\label{tab:correct}
+\end{table}
+
+\begin{lstlisting}[caption={Excerpt of the runtime self-test (\code{build/aes\_project test}).}, label={lst:selftest}]
+Correctness self-test
+  FIPS-197 Appendix C.1
+  key        000102030405060708090a0b0c0d0e0f
+  plaintext  00112233445566778899aabbccddeeff
+  expected   69c4e0d86a7b0430d8cdb78070b4c55a
+  ours       69c4e0d86a7b0430d8cdb78070b4c55a  match
+  ...
+  all implementations agree on 2,000 random (key, plaintext) pairs
+  43 checks passed
+\end{lstlisting}

@@ -1,0 +1,99 @@
+\chapter{Background}
+\label{ch:bg}
+
+\section{The AES-128 block cipher}
+
+AES-128 encrypts a 128-bit block under a 128-bit key~\cite{fips197,rijndael}. The block is held as a $4\times4$ matrix of bytes, the \emph{state}, filled column by column: $s_{r,c} = \mathrm{in}[r + 4c]$. After an initial key addition, AES-128 applies 10 rounds. Rounds 1--9 apply SubBytes, ShiftRows, MixColumns and AddRoundKey, and round 10 omits MixColumns (Figure~\ref{fig:aesround}).
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+  \node[sw, minimum width=3.2cm] (pt) at (0,0) {Plaintext (16 B)};
+  \node[impl, minimum width=3.2cm] (ark0) at (0,-1.2) {AddRoundKey $k_0$};
+  \node[impl, minimum width=3.2cm] (sb) at (0,-2.8) {SubBytes};
+  \node[impl, minimum width=3.2cm] (sr) at (0,-3.85) {ShiftRows};
+  \node[impl, minimum width=3.2cm] (mc) at (0,-4.9) {MixColumns};
+  \node[impl, minimum width=3.2cm] (ark) at (0,-5.95) {AddRoundKey $k_i$};
+  \begin{scope}[on background layer]
+    \node[layer, fit=(sb)(ark), inner xsep=8mm, inner ysep=4mm, yshift=2mm] (loop) {};
+  \end{scope}
+  \node[ttl, anchor=north west, inner sep=3pt] at (loop.north west) {Rounds 1--9};
+  \node[impl, text width=4.6cm] (last) at (0,-7.8) {Round 10: SubBytes,\\ ShiftRows, AddRoundKey $k_{10}$};
+  \node[sw, minimum width=3.2cm] (ct) at (0,-9.2) {Ciphertext (16 B)};
+  \draw[arr] (pt) -- (ark0); \draw[arr] (ark0) -- (sb); \draw[arr] (sb) -- (sr); \draw[arr] (sr) -- (mc); \draw[arr] (mc) -- (ark);
+  \draw[arr] (ark) -- (last); \draw[arr] (last) -- (ct);
+  \node[note, text width=4.0cm] (ks) at (5.0,-5.95) {Key expansion: 16-byte key $\rightarrow$ 44 words = 11 round keys (176 B) via RotWord, SubWord, Rcon};
+  \draw[darr] (ks.west) -- (ark.east);
+  \node[note, text width=2.8cm] (sx) at (-4.5,-2.8) {S-box: the only\\ non-linear step};
+  \draw[darr] (sx.east) -- (sb.west);
+\end{tikzpicture}
+\caption{Structure of AES-128 encryption.}
+\label{fig:aesround}
+\end{figure}
+
+\subsection{The finite field GF(2\texorpdfstring{$^8$}{8})}
+
+AES treats each byte $b_7 b_6\ldots b_0$ as a polynomial $b_7x^7 + \cdots + b_1x + b_0$ with coefficients in GF(2). Arithmetic is done modulo the irreducible polynomial
+\begin{equation}
+m(x) = x^8 + x^4 + x^3 + x + 1 \quad (\texttt{0x11B}).
+\end{equation}
+Because $m(x)$ is irreducible, every non-zero element has a multiplicative inverse, so the 256 byte values form a field. Addition is bitwise XOR. Multiplication by $x$ (\code{xtime}) is a left shift followed by a conditional XOR with \texttt{0x1B} when the top bit overflows:
+\begin{equation}
+\mathrm{xtime}(a) = (a \ll 1) \oplus (\texttt{0x1B}\cdot a_7).
+\end{equation}
+General multiplication is repeated \code{xtime} and XOR. The implementation in this project reproduces the FIPS-197 examples $\{57\}\cdot\{83\} = \{\mathrm{c1}\}$ and $\{57\}\cdot\{13\} = \{\mathrm{fe}\}$, and its \code{xtime} uses a mask ($\texttt{0x1B}\,\&\,{-}(a \gg 7)$) instead of an \code{if}, so it has no data-dependent branch.
+
+\subsection{SubBytes and the S-box}
+
+SubBytes is the only non-linear step. Without it, AES would be a linear map over GF(2) and could be broken by solving linear equations. Each byte is replaced by
+\begin{equation}
+S(a) = A\!\left(a^{-1}\right) \oplus \texttt{0x63},
+\label{eq:sbox}
+\end{equation}
+where $a^{-1}$ is the inverse in GF(2$^8$) (with $0^{-1} := 0$) and $A$ is the affine map $b \mapsto b \oplus \mathrm{rotl}(b,1) \oplus \mathrm{rotl}(b,2) \oplus \mathrm{rotl}(b,3) \oplus \mathrm{rotl}(b,4)$. Inversion gives strong non-linearity, and the affine map removes the simple algebraic structure of pure inversion and ensures there are no fixed points. Since the multiplicative group has order 255, $a^{255} = 1$ and therefore
+\begin{equation}
+a^{-1} = a^{254}.
+\end{equation}
+The constant-time implementation in Part I computes this with a fixed chain of multiplications instead of a table lookup; this is the core of its side-channel defence.
+
+\subsection{ShiftRows, MixColumns and key expansion}
+
+ShiftRows rotates row $r$ left by $r$ positions. MixColumns multiplies each column, as a polynomial over GF(2$^8$), by $c(x) = \{03\}x^3 + \{01\}x^2 + \{01\}x + \{02\}$ modulo $x^4+1$, which is the circulant MDS matrix
+\begin{equation}
+\begin{pmatrix} 02 & 03 & 01 & 01 \\ 01 & 02 & 03 & 01 \\ 01 & 01 & 02 & 03 \\ 03 & 01 & 01 & 02 \end{pmatrix}.
+\end{equation}
+A change in $k$ input bytes of a column changes at least $5-k$ output bytes, so together with ShiftRows AES reaches full diffusion after two rounds. The final round omits MixColumns because it is linear: in the last round an attacker could simply undo it.
+
+The key expansion produces 44 words:
+\begin{equation}
+w_i = w_{i-4} \oplus \begin{cases} \mathrm{SubWord}(\mathrm{RotWord}(w_{i-1})) \oplus \mathrm{Rcon}_{i/4} & i \equiv 0 \pmod 4,\\ w_{i-1} & \text{otherwise,}\end{cases}
+\end{equation}
+with $\mathrm{Rcon}_j = x^{j-1}$ in GF(2$^8$).
+
+\subsection{Fast software AES: T-tables}
+
+A common optimisation merges SubBytes, ShiftRows and MixColumns into four 256-entry tables of 32-bit words (4~KB in total). Each round then becomes 16 table lookups and XORs. The lookup index is a state byte, that is, a function of the plaintext and the key, so the memory address touched depends on the secret. This is the source of the classic cache-timing attacks~\cite{bernstein05,osvik06}.
+
+\section{Timing side channels}
+
+A timing side channel exists when the time an operation takes depends on secret data. Two mechanisms matter in this work:
+
+\begin{itemize}
+  \item \textbf{Secret-dependent branches.} If code does more work when a secret bit is set, the extra time reveals the bit.
+  \item \textbf{Secret-dependent memory accesses.} A lookup \code{T[secret]} touches a cache line determined by the secret. An attacker who can evict or observe cache lines learns the access pattern. T-table AES performs 160 such lookups per block.
+\end{itemize}
+
+Defences avoid secret-indexed tables (bit-slicing~\cite{kasper09}, vector permutes~\cite{hamburg09}, or computing the S-box) or use dedicated hardware instructions such as the ARMv8 \code{AESE}/\code{AESMC} instructions. Some processors add a \emph{data-independent timing} mode (ARMv8.4 DIT, Intel DOITM) under which listed instructions must take data-independent time.
+
+\section{Fixed-versus-random leakage testing}
+
+The non-specific TVLA test~\cite{tvla}, adapted to software timing as \emph{dudect}~\cite{dudect}, measures many executions with inputs drawn from two classes: a \textbf{fixed} input, the same every time, and a \textbf{random} input, fresh every time. It compares the two timing distributions with Welch's $t$-test~\cite{welch47}:
+\begin{equation}
+t = \frac{\bar x_F - \bar x_R}{\sqrt{s_F^2/n_F + s_R^2/n_R}}.
+\label{eq:welch}
+\end{equation}
+$\lvert t\rvert > 4.5$ is the conventional threshold for ``leakage detected'' (roughly $p < 10^{-5}$). The test asks \emph{whether} timing depends on the data, not \emph{how}, and it says nothing about exploitability. Its sensitivity can be stated as a \emph{minimum detectable difference}, $4.5\sqrt{s_F^2/n_F + s_R^2/n_R}$: a non-detection only rules out mean differences larger than this.
+
+\section{Compilers and constant-time code}
+
+A compiler must preserve a program's observable behaviour, but execution time is not part of that behaviour. A compiler is therefore free to turn branch-free source code into a branch, or to replace arithmetic with a table, if it judges the result faster~\cite{tobrust}. Programmers defend against this with \emph{optimisation barriers}: constructs that hide a value from the optimiser so it cannot reason about it. In C, inline assembly and \code{volatile} are common. In Rust, the \code{subtle} crate~\cite{subtle} wraps secret booleans in a \code{Choice} type and passes them through a volatile read (or, optionally, \code{core::hint::black\_box}). The Rust documentation states explicitly that \code{black\_box} is a best-effort hint and must not be relied on for cryptographic guarantees~\cite{blackbox}. Whether such barriers survive every compiler configuration is the starting point of Part II.
